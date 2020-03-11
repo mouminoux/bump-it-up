@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/google/go-github/v29/github"
 	"golang.org/x/oauth2"
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
@@ -39,20 +40,21 @@ func GetRepo(githubInfo *GithubInfo) (*Github, error) {
 	}
 
 	repo, err := git.PlainClone(tmpRepoPath, false, &git.CloneOptions{
-		URL:      "https://github.com/" + githubInfo.Owner + "/" + githubInfo.Repository,
-		Progress: os.Stdout,
-		Depth:    0,
-		Auth:     auth,
+		URL:          "https://github.com/" + githubInfo.Owner + "/" + githubInfo.Repository,
+		Progress:     os.Stdout,
+		Depth:        1,
+		Auth:         auth,
+		SingleBranch: true,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	g := &Github{
-		repo:           repo,
-		auth:           auth,
-		tmpRepoPath:    tmpRepoPath,
-		githubInfo: *githubInfo,
+		repo:        repo,
+		auth:        auth,
+		tmpRepoPath: tmpRepoPath,
+		githubInfo:  *githubInfo,
 	}
 	return g, nil
 }
@@ -68,10 +70,11 @@ func (g *Github) DeleteRepo() {
 }
 
 func (g *Github) PushAndCreatePR(branchName string, title string) error {
-
-	if _, err := g.checkoutBranch("master"); err != nil {
-		return err
-	}
+	defer func() {
+		if _, err := g.checkoutBranch("master", false); err != nil {
+			log.Printf("%v\n", err)
+		}
+	}()
 
 	// create branch
 	if err := g.createBranch(branchName); err != nil {
@@ -79,7 +82,7 @@ func (g *Github) PushAndCreatePR(branchName string, title string) error {
 	}
 
 	//create commit
-	gitWorkTree, err := g.checkoutBranch(branchName)
+	gitWorkTree, err := g.checkoutBranch(branchName, true)
 	if err != nil {
 		return err
 	}
@@ -102,10 +105,10 @@ func (g *Github) PushAndCreatePR(branchName string, title string) error {
 
 	// push
 	pushOpt := &git.PushOptions{
-		RefSpecs: nil,
-		Auth:     g.auth,
-		Progress: nil,
-		Prune:    false,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec(plumbing.NewBranchReferenceName(branchName).String() + ":" + plumbing.NewBranchReferenceName(branchName).String()),
+		},
+		Auth: g.auth,
 	}
 	if err := g.repo.Push(pushOpt); err != nil {
 		return err
@@ -136,14 +139,10 @@ func (g *Github) PushAndCreatePR(branchName string, title string) error {
 
 	log.Printf("Pull request created: %s\n", *pullRequest.HTMLURL)
 
-	if _, err = g.checkoutBranch("master"); err != nil {
-		return err
-	}
-
 	return nil
 }
 
-func (g *Github) checkoutBranch(branchName string) (*git.Worktree, error) {
+func (g *Github) checkoutBranch(branchName string, keepStaging bool) (*git.Worktree, error) {
 	gitWorkTree, err := g.repo.Worktree()
 	if err != nil {
 		return nil, err
@@ -153,7 +152,7 @@ func (g *Github) checkoutBranch(branchName string) (*git.Worktree, error) {
 		Branch: plumbing.NewBranchReferenceName(branchName),
 		Create: false,
 		Force:  false,
-		Keep:   true,
+		Keep:   keepStaging,
 	})
 	if err != nil {
 		return nil, err
