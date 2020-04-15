@@ -117,13 +117,14 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 
 
 		prTitle := fmt.Sprintf("Bump %s from %s to %s", dependency.PropertyName, dependency.Version, lastVersion)
+		log.Println(prTitle)
+
 		prDescription := ""
 		for _, d := range dependencyWithSamePropertyName {
-			prDescription += fmt.Sprintf("- Update %s:%s from %s to %s", d.GroupId, d.ArtifactId, d.Version, lastVersion)
+			depDesc := fmt.Sprintf("- Update %s:%s from %s to %s\n", d.GroupId, d.ArtifactId, d.Version, lastVersion)
+			log.Print(depDesc)
+			prDescription += depDesc
 		}
-
-		log.Println(prTitle)
-		log.Println(prDescription)
 
 		if *dryRun {
 			continue
