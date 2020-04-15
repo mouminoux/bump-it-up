@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/jawher/mow.cli"
 	"github.com/mouminoux/bump-it-up/github"
 	"github.com/mouminoux/bump-it-up/maven"
@@ -12,6 +13,13 @@ import (
 func main() {
 	app := cli.App("bump-it-up", "Bump version")
 	app.Spec = ""
+
+	dryRun := app.Bool(cli.BoolOpt{
+		Name:   "dry-run",
+		Desc:   "dry run: do not create pull request",
+		EnvVar: "DRY_RUN",
+		Value:  false,
+	})
 
 	githubAccessToken := app.String(cli.StringOpt{
 		Name:   "access-token",
@@ -64,7 +72,7 @@ func main() {
 	}
 
 	app.Action = func() {
-		do(&githubInfo, &repositoryInfo, mvnGroupId)
+		do(&githubInfo, &repositoryInfo, mvnGroupId, dryRun)
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -72,12 +80,15 @@ func main() {
 	}
 }
 
-func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo, mavenGroupIdFilter *string) {
+func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo, mavenGroupIdFilter *string, dryRun *bool) {
+	if *dryRun {
+		log.Printf("Dry run enabled")
+	}
+
 	repo, err := github.GetRepo(githubInfo)
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	defer repo.DeleteRepo()
 
 	pomPath := repo.GetTmpRepoPath() + "/pom.xml"
@@ -85,24 +96,49 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 
 	propertyNameAlreadyBumped := make(map[string]bool)
 	for _, dependency := range dependencies {
-		if alreadyBumped := propertyNameAlreadyBumped[dependency.PropertyName]; strings.Contains(dependency.GroupId, *mavenGroupIdFilter) && !alreadyBumped {
-			lastVersion := maven.GetLastVersion(dependency, mavenRepositoryInfo)
-			if lastVersion != dependency.Version {
-				log.Printf("Bump %s:%s from %s to %s (%s)\n", dependency.GroupId, dependency.ArtifactId, dependency.Version, lastVersion, dependency.PropertyName)
 
-				maven.ChangeVersion(pomPath, dependency, lastVersion)
+		if alreadyBumped := propertyNameAlreadyBumped[dependency.PropertyName]; !strings.Contains(dependency.GroupId, *mavenGroupIdFilter) || alreadyBumped {
+			continue
+		}
 
-				branchName := "bump-it-up/" + dependency.PropertyName + "/" + lastVersion
+		lastVersion := maven.GetLastVersion(dependency, mavenRepositoryInfo)
+		if lastVersion == dependency.Version {
+			continue
+		}
 
-				if err := repo.PushAndCreatePR(branchName, "[BumpItUp] Bump "+dependency.PropertyName); err != nil {
-					if strings.HasPrefix(err.Error(), "non-fast-forward update") {
-						log.Printf("Impossible to bump version, maybe the branch %s already exist\n", branchName)
-					}
-					log.Printf("%v\n", err)
-				}
+		log.Println(strings.Repeat("-", 60))
 
-				propertyNameAlreadyBumped[dependency.PropertyName] = true
+		var dependencyWithSamePropertyName []maven.Dependency
+		for _, d := range dependencies {
+			if d.PropertyName == dependency.PropertyName {
+				dependencyWithSamePropertyName = append(dependencyWithSamePropertyName, d)
 			}
 		}
+
+
+		prTitle := fmt.Sprintf("Bump %s from %s to %s", dependency.PropertyName, dependency.Version, lastVersion)
+		prDescription := ""
+		for _, d := range dependencyWithSamePropertyName {
+			prDescription += fmt.Sprintf("- Update %s:%s from %s to %s", d.GroupId, d.ArtifactId, d.Version, lastVersion)
+		}
+
+		log.Println(prTitle)
+		log.Println(prDescription)
+
+		if *dryRun {
+			continue
+		}
+
+		if err := maven.ChangeVersion(pomPath, dependency, lastVersion); err != nil {
+			log.Fatalf("%v\n", err)
+		}
+
+		branchName := "bump-it-up/" + dependency.PropertyName + "/" + lastVersion
+
+		if err := repo.PushAndCreatePR(branchName, prTitle, prDescription); err != nil {
+			log.Printf("%v\n", err)
+		}
+
+		propertyNameAlreadyBumped[dependency.PropertyName] = true
 	}
 }
