@@ -101,6 +101,8 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 			continue
 		}
 
+		propertyNameAlreadyBumped[dependency.PropertyName] = true
+
 		lastVersion := maven.GetLastVersion(dependency, mavenRepositoryInfo)
 		if lastVersion == dependency.Version {
 			continue
@@ -139,7 +141,5 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 		if err := repo.PushAndCreatePR(branchName, prTitle, prDescription); err != nil {
 			log.Printf("%v\n", err)
 		}
-
-		propertyNameAlreadyBumped[dependency.PropertyName] = true
 	}
 }
