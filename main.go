@@ -23,8 +23,7 @@ func main() {
 
 	oneBranchPerDependency := app.Bool(cli.BoolOpt{
 		Name:   "one-branch-per-dependency",
-		Desc:   "one-branch-per-dependency: create one commit and one branch per dependency update" +
-			"",
+		Desc:   "one-branch-per-dependency: create one commit and one branch per dependency update",
 		EnvVar: "ONE_BRANCH_PER_DEPENDENCY",
 		Value:  true,
 	})
