@@ -21,6 +21,13 @@ func main() {
 		Value:  false,
 	})
 
+	oneBranchPerDependency := app.Bool(cli.BoolOpt{
+		Name:   "one-branch-per-dependency",
+		Desc:   "one-branch-per-dependency: create one commit and one branch per dependency update",
+		EnvVar: "ONE_BRANCH_PER_DEPENDENCY",
+		Value:  true,
+	})
+
 	githubAccessToken := app.String(cli.StringOpt{
 		Name:   "access-token",
 		Desc:   "github access token",
@@ -72,7 +79,7 @@ func main() {
 	}
 
 	app.Action = func() {
-		do(&githubInfo, &repositoryInfo, mvnGroupId, dryRun)
+		do(&githubInfo, &repositoryInfo, mvnGroupId, dryRun, oneBranchPerDependency)
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -80,7 +87,7 @@ func main() {
 	}
 }
 
-func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo, mavenGroupIdFilter *string, dryRun *bool) {
+func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo, mavenGroupIdFilter *string, dryRun *bool, oneBranchPerDependency *bool) {
 	if *dryRun {
 		log.Printf("Dry run enabled")
 	}
@@ -95,6 +102,9 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 	dependencies := maven.ReadPom(pomPath)
 
 	propertyNameAlreadyBumped := make(map[string]bool)
+
+	prDescription := ""
+
 	for _, dependency := range dependencies {
 
 		if alreadyBumped := propertyNameAlreadyBumped[dependency.PropertyName]; !strings.Contains(dependency.GroupId, *mavenGroupIdFilter) || alreadyBumped {
@@ -117,11 +127,9 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 			}
 		}
 
-
 		prTitle := fmt.Sprintf("Bump %s from %s to %s", dependency.PropertyName, dependency.Version, lastVersion)
 		log.Println(prTitle)
 
-		prDescription := ""
 		for _, d := range dependencyWithSamePropertyName {
 			depDesc := fmt.Sprintf("- Update %s:%s from %s to %s\n", d.GroupId, d.ArtifactId, d.Version, lastVersion)
 			log.Print(depDesc)
@@ -136,10 +144,23 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 			log.Fatalf("%v\n", err)
 		}
 
-		branchName := "bump-it-up/" + dependency.PropertyName + "/" + lastVersion
+		if *oneBranchPerDependency {
+			branchName := "bump-it-up/" + dependency.PropertyName + "/" + lastVersion
 
-		if err := repo.PushAndCreatePR(branchName, prTitle, prDescription); err != nil {
-			log.Printf("%v\n", err)
+			if err := repo.PushAndCreatePR(branchName, prTitle, prDescription); err != nil {
+				log.Printf("%v\n", err)
+			}
+			prDescription = ""
+		}
+	}
+
+	if !*oneBranchPerDependency {
+		if !*dryRun {
+			if err := repo.PushAndCreatePR("bump-it-up/bump-them-all", "Bump dependency with group-id: "+*mavenGroupIdFilter, prDescription); err != nil {
+				log.Printf("%v\n", err)
+			}
+		} else {
+			log.Printf("%v\n", prDescription)
 		}
 	}
 }
