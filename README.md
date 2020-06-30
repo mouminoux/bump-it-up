@@ -7,6 +7,8 @@ Usage: bump-it-up [OPTIONS]
 Bump version
                                     
 Options:                            
+      --dry-run                     dry run: do not create pull request (env $DRY_RUN)
+      --one-branch-per-dependency   one-branch-per-dependency: create one commit and one branch per dependency update (env $ONE_BRANCH_PER_DEPENDENCY) (default true)
       --access-token                github access token (env $ACCESS_TOKEN)
       --repository-owner            github repository owner (env $REPOSITORY_OWNER)
       --repository                  github repository name (env $REPOSITORY)
