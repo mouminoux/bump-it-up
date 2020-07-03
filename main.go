@@ -159,8 +159,6 @@ func do(githubInfo *github.GithubInfo, mavenRepositoryInfo *maven.RepositoryInfo
 			if err := repo.PushAndCreatePR("bump-it-up/bump-them-all", "Bump dependency with group-id: "+*mavenGroupIdFilter, prDescription); err != nil {
 				log.Printf("%v\n", err)
 			}
-		} else {
-			log.Printf("%v\n", prDescription)
 		}
 	}
 }
